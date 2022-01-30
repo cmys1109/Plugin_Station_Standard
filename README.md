@@ -1,4 +1,5 @@
-#Plugin_Station  
+ 
+# Plugin_Station  
 自动化安装插件规范，使用GitHub仓库作为插件储存库  
 并且配套了自动安装插件程序，开源于[客户端]文件夹中  
 插件作者成为协作者后，按照规范在[Plugin_Station](https://github.com/cmys1109/Plugin-Station)
