@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -15,19 +16,75 @@ import (
 	"time"
 )
 
+type version struct {
+	MajorVersionNumber int
+	MinorVersionNumber int
+	RevisionNumber     int
+}
+
+type Version interface {
+	ToString() string
+	IsLastest(GetVer version) bool
+}
+
+func (version version) ToString() string {
+	var versionstr = "V "
+	versionstr = versionstr + strconv.Itoa(version.MajorVersionNumber) + "."
+	versionstr = versionstr + strconv.Itoa(version.MinorVersionNumber) + "."
+	versionstr = versionstr + strconv.Itoa(version.RevisionNumber)
+	return versionstr
+}
+
+func (version version) IsLastest(GetVer version) bool {
+	if version.MajorVersionNumber < GetVer.MajorVersionNumber {
+		return false
+	} else if version.MinorVersionNumber < GetVer.MinorVersionNumber {
+		return false
+	} else if version.RevisionNumber < GetVer.RevisionNumber {
+		return false
+	}
+	if version.MajorVersionNumber >= GetVer.MajorVersionNumber {
+		return true
+	}
+	return true
+}
+
+func StringToVersion(PluginVer string) (version, error) {
+	var PluginSlice = strings.Split(PluginVer, ".")
+	if len(PluginSlice) != 3 {
+		return version{}, errors.New("version type is not in GNU format")
+	}
+	minor, err := strconv.Atoi(PluginSlice[1])
+	if err != nil {
+		return version{}, err
+	}
+	major, err := strconv.Atoi(strings.Split(PluginSlice[0], " ")[1])
+	if err != nil {
+		return version{}, err
+	}
+	re, err := strconv.Atoi(PluginSlice[2])
+	if err != nil {
+		return version{}, err
+	}
+
+	return version{major, minor, re}, nil
+}
+
 type app struct {
 	PreferredURL string
 	AlternateURL string
 }
 
 type Details struct {
-	Pluginname string              `json:"pluginname"`
-	Version    string              `json:"version"`
-	Developer  string              `json:"developer"`
-	Cmd        map[string][]string `json:"cmd"`
+	Pluginname string     `json:"pluginname"`
+	Version    string     `json:"version"`
+	Developer  string     `json:"developer"`
+	Cmd        [][]string `json:"cmd"`
 }
 
 var DownloadURL string
+
+var PluginList map[string]string
 
 func main() {
 	var App app
@@ -44,6 +101,22 @@ func main() {
 		return
 	}
 
+	_, err := os.Stat("./PluginList.json")
+	if os.IsNotExist(err) {
+		PluginListFile, err := os.OpenFile("./PluginList.json", os.O_RDWR|os.O_CREATE, 0766)
+		if err != nil {
+			fmt.Println(err.Error())
+		}
+		_, err = PluginListFile.Write([]byte("{\n  \"YouCanDelThisLine\":\"plugin_download_key\"\n}"))
+		if err != nil {
+			return
+		}
+		err = PluginListFile.Close()
+		if err != nil {
+			return
+		}
+	}
+
 	fmt.Println("Started!")
 	fmt.Println("Enter Plugin's name or enter 0 to exit.")
 	var Plugin string
@@ -57,10 +130,10 @@ func main() {
 		return
 	}
 
-	if TryLink(App.PreferredURL) == false {
+	if !TryLink(App.PreferredURL) {
 		fmt.Println("PreferredURL outdated")
 		fmt.Println("Change download address...")
-		if TryLink(App.AlternateURL) == false {
+		if !TryLink(App.AlternateURL) {
 			fmt.Println("AlternateURL outdated")
 			fmt.Println("stop...")
 		} else {
@@ -71,7 +144,7 @@ func main() {
 	}
 
 	for true {
-
+		time.Sleep(1 * time.Second)
 		err := GetPlugin(Plugin)
 		if err != nil {
 			_ = fmt.Errorf(err.Error())
@@ -84,7 +157,7 @@ func main() {
 			return
 		}
 
-		err = InstallPlugin(Details)
+		err = InstallPlugin(Details, Plugin)
 		if err != nil {
 			fmt.Println(err.Error())
 			return
@@ -131,10 +204,9 @@ func TryLink(url string) bool {
 	}
 }
 
-func GetPlugin(Plugin string) error {
-	time.Sleep(1 * time.Second)
+func GetPlugin(PluginKey string) error {
 	client := &http.Client{Timeout: 60 * time.Second}
-	req, _ := http.NewRequest("GET", DownloadURL+"cmys1109/Plugin-Station/main/Plugins/"+Plugin, nil)
+	req, _ := http.NewRequest("GET", DownloadURL+"cmys1109/Plugin-Station/main/Plugins/"+strings.Split(PluginKey, ".")[0], nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36")
 	resp, err := client.Do(req)
 	if err != nil {
@@ -150,7 +222,7 @@ func GetPlugin(Plugin string) error {
 	}(resp.Body)
 
 	if resp.StatusCode == 200 {
-		f, err := os.Create(Plugin)
+		f, err := os.Create(PluginKey)
 		if err != nil {
 			return err
 		}
@@ -177,9 +249,9 @@ func GetPlugin(Plugin string) error {
 	return nil
 }
 
-func GetDetails(Plugin string) (Details, error) {
+func GetDetails(PluginKey string) (Details, error) {
 	cl := &http.Client{Timeout: 10 * time.Second}
-	req, _ := http.NewRequest("GET", DownloadURL+"cmys1109/Plugin-Station/main/Details/"+strings.Split(Plugin, ".")[0]+".json", nil)
+	req, _ := http.NewRequest("GET", DownloadURL+"cmys1109/Plugin-Station/main/Details/"+strings.Split(PluginKey, ".")[0]+".json", nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36")
 	resp, err := cl.Do(req)
 	if err != nil {
@@ -203,12 +275,16 @@ func GetDetails(Plugin string) (Details, error) {
 	return details, nil
 }
 
-func InstallPlugin(details Details) error {
+func InstallPlugin(details Details, PluginKey string) error {
+	_, err := StringToVersion(details.Version)
+	if err != nil {
+		return err
+	}
 	fmt.Println(details.Pluginname, " start to install...")
 	fmt.Println("Plugin version:", details.Version)
 	fmt.Println("Plugin developer:", details.Developer)
-	for CommandName, Command := range details.Cmd {
-		fmt.Println("Run command:", CommandName)
+	for Com, Command := range details.Cmd {
+		fmt.Println("Run command:", Com)
 		switch Command[0] {
 		case "unzip":
 			err := Unzip(Command[1], Command[2])
@@ -227,6 +303,47 @@ func InstallPlugin(details Details) error {
 			}
 		}
 	}
+
+	PluginListFile, err := ioutil.ReadFile("./PluginList.json")
+	if err != nil {
+		return err
+	}
+
+	err = json.Unmarshal(PluginListFile, &PluginList)
+	if err != nil {
+		return err
+	}
+	PluginList[PluginKey] = details.Version
+	PluginListByte, err := json.Marshal(PluginList)
+	if err != nil {
+		return err
+	}
+	err = ioutil.WriteFile("./PluginList.json", PluginListByte, fs.ModePerm)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func UpdatePlugin(PluginKey string, NowVer version) error {
+	details, err := GetDetails(PluginKey)
+	if err != nil {
+		return err
+	}
+	NowVersion, err := StringToVersion(details.Version)
+	if err != nil {
+		return err
+	}
+
+	if NowVer.IsLastest(NowVersion) {
+		return nil
+	}
+	err = GetPlugin(PluginKey)
+	if err != nil {
+		return err
+	}
+	InstallPlugin(details, PluginKey)
+
 	return nil
 }
 
@@ -243,14 +360,14 @@ func Unzip(zipFile string, destDir string) error { //https://www.jianshu.com/p/4
 	//}(zipReader)
 
 	for _, f := range zipReader.File {
-		fpath := filepath.Join(destDir, f.Name)
+		FilePath := filepath.Join(destDir, f.Name)
 		if f.FileInfo().IsDir() {
-			err := os.MkdirAll(fpath, os.ModePerm)
+			err := os.MkdirAll(FilePath, os.ModePerm)
 			if err != nil {
 				return err
 			}
 		} else {
-			if err = os.MkdirAll(filepath.Dir(fpath), os.ModePerm); err != nil {
+			if err = os.MkdirAll(filepath.Dir(FilePath), os.ModePerm); err != nil {
 				return err
 			}
 
@@ -265,7 +382,7 @@ func Unzip(zipFile string, destDir string) error { //https://www.jianshu.com/p/4
 				}
 			}(inFile)
 
-			outFile, err := os.OpenFile(fpath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+			outFile, err := os.OpenFile(FilePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
 			if err != nil {
 				return err
 			}
@@ -298,7 +415,19 @@ func copyFile(srcFile, destFile string) (int64, error) {
 	}
 	file2, err := os.OpenFile(destFile, os.O_WRONLY|os.O_CREATE, os.ModePerm)
 	if err != nil {
-		return 0, err
+		if strings.Split(err.Error(), ":")[1] == " The system cannot find the path specified." {
+			var InstallDir = ""
+			for i := 0; i < len(strings.Split(destFile, "/"))-2; i++ {
+				InstallDir = InstallDir + strings.Split(destFile, "/")[i] + "/"
+			}
+			InstallDir = InstallDir + strings.Split(destFile, "/")[len(strings.Split(destFile, "/"))-2]
+			err := os.MkdirAll(InstallDir, os.ModePerm)
+			if err != nil {
+				return 0, err
+			}
+		} else {
+			return 0, err
+		}
 	}
 	defer func(file1 *os.File) {
 		err := file1.Close()
