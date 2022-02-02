@@ -41,9 +41,11 @@ example:
 ------
 ##  cmd规范
 
-cmd是一个由key为string，value为string数组组成的集合  
+cmd是一个由key为string，value为string组成的集合  
 
 客户端在拿到detail.json的数据后会解析cmd  
+并且按顺序进行操作  
+
 ###  注意点：数组中的key请按操作顺序排序！
 
 ###  cmd所提供的方法：  
