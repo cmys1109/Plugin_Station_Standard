@@ -37,9 +37,6 @@ example:
  
 ![img3.png](./img/img3.png)
 
-下为结构体和json定义：  
-
-![img_1.png](./img/img_1.png)
 
 ------
 ##  cmd规范
