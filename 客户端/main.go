@@ -84,7 +84,7 @@ type Details struct {
 
 var DownloadURL string
 
-var PluginList map[string]string
+var PluginList map[string]map[string]string
 
 func main() {
 	var App app
@@ -107,7 +107,7 @@ func main() {
 		if err != nil {
 			fmt.Println(err.Error())
 		}
-		_, err = PluginListFile.Write([]byte("{\n  \"YouCanDelThisLine\":\"plugin_download_key\"\n}"))
+		_, err = PluginListFile.Write([]byte("{\n  \"pluginkey\": {\n    \"version\": \"V 1.0.0\",\n    \"file_0\": \"./DownloadPage/test.go\"\n  }\n}"))
 		if err != nil {
 			return
 		}
@@ -206,7 +206,7 @@ func TryLink(url string) bool {
 
 func GetPlugin(PluginKey string) error {
 	client := &http.Client{Timeout: 60 * time.Second}
-	req, _ := http.NewRequest("GET", DownloadURL+"cmys1109/Plugin-Station/main/Plugins/"+strings.Split(PluginKey, ".")[0], nil)
+	req, _ := http.NewRequest("GET", DownloadURL+"cmys1109/Plugin-Station/main/Plugins/"+PluginKey, nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36")
 	resp, err := client.Do(req)
 	if err != nil {
@@ -283,6 +283,8 @@ func InstallPlugin(details Details, PluginKey string) error {
 	fmt.Println(details.Pluginname, " start to install...")
 	fmt.Println("Plugin version:", details.Version)
 	fmt.Println("Plugin developer:", details.Developer)
+	PluginListStruct := make(map[string]string)
+	PluginListStruct["version"] = details.Version
 	for Com, Command := range details.Cmd {
 		fmt.Println("Run command:", Com)
 		switch Command[0] {
@@ -296,6 +298,7 @@ func InstallPlugin(details Details, PluginKey string) error {
 			if err != nil {
 				return err
 			}
+			PluginListStruct["file_"+Command[2]] = Command[2]
 		case "del":
 			err := DelFileOrDir(Command[1])
 			if err != nil {
@@ -313,7 +316,7 @@ func InstallPlugin(details Details, PluginKey string) error {
 	if err != nil {
 		return err
 	}
-	PluginList[PluginKey] = details.Version
+	PluginList[PluginKey] = PluginListStruct
 	PluginListByte, err := json.Marshal(PluginList)
 	if err != nil {
 		return err
@@ -342,10 +345,15 @@ func UpdatePlugin(PluginKey string, NowVer version) error {
 	if err != nil {
 		return err
 	}
-	InstallPlugin(details, PluginKey)
+	err = InstallPlugin(details, PluginKey)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
+
+//func UninstallPlugin(PluginKey string)
 
 func Unzip(zipFile string, destDir string) error { //https://www.jianshu.com/p/4593cfffb9e9
 	zipReader, err := zip.OpenReader(zipFile)
@@ -421,13 +429,17 @@ func copyFile(srcFile, destFile string) (int64, error) {
 				InstallDir = InstallDir + strings.Split(destFile, "/")[i] + "/"
 			}
 			InstallDir = InstallDir + strings.Split(destFile, "/")[len(strings.Split(destFile, "/"))-2]
-			err := os.MkdirAll(InstallDir, os.ModePerm)
+			err = os.MkdirAll(InstallDir, os.ModePerm)
 			if err != nil {
 				return 0, err
 			}
 		} else {
 			return 0, err
 		}
+	}
+	file2, err = os.OpenFile(destFile, os.O_WRONLY|os.O_CREATE, os.ModePerm)
+	if err != nil {
+		return 0, nil
 	}
 	defer func(file1 *os.File) {
 		err := file1.Close()
