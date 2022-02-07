@@ -79,12 +79,11 @@ type Details struct {
 	Pluginname string     `json:"pluginname"`
 	Version    string     `json:"version"`
 	Developer  string     `json:"developer"`
-	Cmd        [][]string `json:"cmd"`
+	InstallCmd [][]string `json:"install_cmd"`
+	UpdatesCmd [][]string `json:"updates_cmd"`
 }
 
 var DownloadURL string
-
-var PluginList map[string]map[string]string
 
 func main() {
 	var App app
@@ -107,7 +106,7 @@ func main() {
 		if err != nil {
 			fmt.Println(err.Error())
 		}
-		_, err = PluginListFile.Write([]byte("{\n  \"pluginkey\": {\n    \"version\": \"V 1.0.0\",\n    \"file_0\": \"./DownloadPage/test.go\"\n  }\n}"))
+		_, err = PluginListFile.Write([]byte("{}"))
 		if err != nil {
 			return
 		}
@@ -116,19 +115,7 @@ func main() {
 			return
 		}
 	}
-
-	fmt.Println("Started!")
-	fmt.Println("Enter Plugin's name or enter 0 to exit.")
-	var Plugin string
-	scanln, err := fmt.Scanln(&Plugin)
-	if err != nil {
-		scanln = scanln + 1
-		return
-	}
-	if Plugin == "0" {
-		fmt.Println("stop")
-		return
-	}
+	var PluginList map[string]map[string]string
 
 	if !TryLink(App.PreferredURL) {
 		fmt.Println("PreferredURL outdated")
@@ -143,40 +130,94 @@ func main() {
 		DownloadURL = App.PreferredURL
 	}
 
+	fmt.Println("Started!")
+	var command, PluginKey string
 	for true {
-		time.Sleep(1 * time.Second)
-		err := GetPlugin(Plugin)
-		if err != nil {
-			_ = fmt.Errorf(err.Error())
-			return
-		}
-
-		Details, err := GetDetails(Plugin)
+		PluginListByte, err := ioutil.ReadFile("PluginList.json")
 		if err != nil {
 			fmt.Println(err.Error())
 			return
 		}
-
-		err = InstallPlugin(Details, Plugin)
+		err = json.Unmarshal(PluginListByte, &PluginList)
 		if err != nil {
-			fmt.Println(err.Error())
-			return
-		}
-		fmt.Println(Plugin, " Successfully installed!")
-
-		fmt.Print("\n\nInstall other plugin?(y/n)")
-		var other string
-		scanln, err := fmt.Scanln(&other)
-		if err != nil {
-			fmt.Println(scanln)
 			return
 		}
 
-		if other == "n" {
-			fmt.Println("stop...")
-			break
+		fmt.Print(">>>")
+		_, _ = fmt.Scanln(&command, &PluginKey)
+
+		switch command {
+		case "install":
+			if PluginList[PluginKey] != nil {
+				fmt.Println(PluginKey, " installed.")
+				break
+			}
+			err = Install(PluginKey)
+			if err != nil {
+				fmt.Println(err.Error())
+				return
+			}
+		case "uninstall":
+			err = UninstallPlugin(PluginKey)
+			if err != nil {
+				fmt.Println(err.Error())
+				return
+			}
+		case "update":
+			if PluginKey == "-a" {
+				PluginListFile, err := ioutil.ReadFile("./PluginList.json")
+				var PluginList map[string]map[string]string
+				err = json.Unmarshal(PluginListFile, &PluginList)
+				if err != nil {
+					fmt.Println(err.Error())
+					return
+				}
+
+				for i := range PluginList {
+					err := UpdatePlugin(i)
+					if err != nil {
+						fmt.Println(err.Error())
+						return
+					}
+				}
+				fmt.Println("All plug-ins are up to date.")
+			} else {
+				err := UpdatePlugin(PluginKey)
+				if err != nil {
+					fmt.Println(err.Error())
+					return
+				}
+			}
+		case "0":
+			fmt.Println("Stop...")
+			return
 		}
 	}
+
+	return
+}
+
+func Install(Plugin string) error {
+	time.Sleep(1 * time.Second)
+	err := GetPlugin(Plugin)
+	if err != nil {
+		_ = fmt.Errorf(err.Error())
+		return err
+	}
+
+	Details, err := GetDetails(Plugin)
+	if err != nil {
+		fmt.Println(err.Error())
+		return err
+	}
+
+	err = InstallPlugin(Details, Plugin)
+	if err != nil {
+		fmt.Println(err.Error())
+		return err
+	}
+	fmt.Println(Plugin, " Successfully installed!")
+	return nil
 }
 
 func TryLink(url string) bool {
@@ -285,7 +326,7 @@ func InstallPlugin(details Details, PluginKey string) error {
 	fmt.Println("Plugin developer:", details.Developer)
 	PluginListStruct := make(map[string]string)
 	PluginListStruct["version"] = details.Version
-	for Com, Command := range details.Cmd {
+	for Com, Command := range details.InstallCmd {
 		fmt.Println("Run command:", Com)
 		switch Command[0] {
 		case "unzip":
@@ -294,7 +335,7 @@ func InstallPlugin(details Details, PluginKey string) error {
 				return err
 			}
 		case "copy":
-			_, err := copyFile(Command[1], Command[2])
+			err := copyFile(Command[1], Command[2])
 			if err != nil {
 				return err
 			}
@@ -312,6 +353,7 @@ func InstallPlugin(details Details, PluginKey string) error {
 		return err
 	}
 
+	var PluginList map[string]map[string]string
 	err = json.Unmarshal(PluginListFile, &PluginList)
 	if err != nil {
 		return err
@@ -328,32 +370,114 @@ func InstallPlugin(details Details, PluginKey string) error {
 	return nil
 }
 
-func UpdatePlugin(PluginKey string, NowVer version) error {
-	details, err := GetDetails(PluginKey)
+func UpdatePlugin(PluginKey string) error {
+	PluginListFile, err := ioutil.ReadFile("./PluginList.json")
+	var PluginList map[string]map[string]string
+	err = json.Unmarshal(PluginListFile, &PluginList)
 	if err != nil {
 		return err
 	}
-	NowVersion, err := StringToVersion(details.Version)
+	NowVersionStr := PluginList[PluginKey]["version"]
+	NowVersion, err := StringToVersion(NowVersionStr)
 	if err != nil {
 		return err
 	}
 
-	if NowVer.IsLastest(NowVersion) {
+	details, err := GetDetails(PluginKey)
+	if err != nil {
+		return err
+	}
+	NewVersion, err := StringToVersion(details.Version)
+	if err != nil {
+		return err
+	}
+
+	if NowVersion.IsLastest(NewVersion) {
+		fmt.Println(PluginKey, " is lastest")
 		return nil
 	}
 	err = GetPlugin(PluginKey)
 	if err != nil {
 		return err
 	}
-	err = InstallPlugin(details, PluginKey)
+	var PluginListStruct map[string]string
+	PluginListStruct = PluginList[PluginKey]
+	for Com, Command := range details.UpdatesCmd {
+		fmt.Println("Run command:", Com)
+		switch Command[0] {
+		case "unzip":
+			err := Unzip(Command[1], Command[2])
+			if err != nil {
+				return err
+			}
+		case "copy":
+			err := copyFile(Command[1], Command[2])
+			if err != nil {
+				return err
+			}
+			PluginListStruct["file_"+Command[2]] = Command[2]
+		case "del":
+			err := DelFileOrDir(Command[1])
+			if err != nil {
+				return err
+			}
+			delete(PluginListStruct, "file_ "+Command[1])
+		}
+	}
+	PluginList[PluginKey] = PluginListStruct
+	PluginListByte, err := json.Marshal(PluginList)
 	if err != nil {
 		return err
 	}
+	err = ioutil.WriteFile("./PluginList.json", PluginListByte, fs.ModePerm)
+	if err != nil {
+		return err
+	}
+	fmt.Println(PluginKey, " updated")
 
 	return nil
 }
 
-//func UninstallPlugin(PluginKey string)
+func UninstallPlugin(PluginKey string) error {
+	PluginListFile, err := ioutil.ReadFile("./PluginList.json")
+	if err != nil {
+		return err
+	}
+
+	var PluginList map[string]map[string]string
+	err = json.Unmarshal(PluginListFile, &PluginList)
+	if err != nil {
+		return err
+	}
+
+	FileList := PluginList[PluginKey]
+	if FileList == nil {
+		fmt.Println("'" + PluginKey + "'" + "not installed.")
+		return nil
+	}
+	for i, _ := range FileList {
+		if i != "version" {
+			err = DelFileOrDir(FileList[i])
+			if err != nil {
+				return err
+			}
+		}
+
+	}
+
+	delete(PluginList, PluginKey)
+	PluginListByte, err := json.Marshal(PluginList)
+	if err != nil {
+		return err
+	}
+	err = ioutil.WriteFile("./PluginList.json", PluginListByte, fs.ModePerm)
+	if err != nil {
+		return err
+	}
+	fmt.Println(PluginKey, " uninstalled.")
+
+	return nil
+}
 
 func Unzip(zipFile string, destDir string) error { //https://www.jianshu.com/p/4593cfffb9e9
 	zipReader, err := zip.OpenReader(zipFile)
@@ -416,10 +540,10 @@ func Unzip(zipFile string, destDir string) error { //https://www.jianshu.com/p/4
 	return nil
 }
 
-func copyFile(srcFile, destFile string) (int64, error) {
+func copyFile(srcFile, destFile string) error {
 	file1, err := os.Open(srcFile)
 	if err != nil {
-		return 0, err
+		return err
 	}
 	file2, err := os.OpenFile(destFile, os.O_WRONLY|os.O_CREATE, os.ModePerm)
 	if err != nil {
@@ -431,30 +555,30 @@ func copyFile(srcFile, destFile string) (int64, error) {
 			InstallDir = InstallDir + strings.Split(destFile, "/")[len(strings.Split(destFile, "/"))-2]
 			err = os.MkdirAll(InstallDir, os.ModePerm)
 			if err != nil {
-				return 0, err
+				return err
 			}
 		} else {
-			return 0, err
+			return err
 		}
 	}
 	file2, err = os.OpenFile(destFile, os.O_WRONLY|os.O_CREATE, os.ModePerm)
 	if err != nil {
-		return 0, nil
+		return nil
 	}
-	defer func(file1 *os.File) {
-		err := file1.Close()
-		if err != nil {
+	_, err = io.Copy(file2, file1)
+	if err != nil {
+		return err
+	}
+	err = file1.Close()
+	if err != nil {
+		return err
+	}
+	err = file2.Close()
+	if err != nil {
+		return err
+	}
 
-		}
-	}(file1)
-	defer func(file2 *os.File) {
-		err := file2.Close()
-		if err != nil {
-
-		}
-	}(file2)
-
-	return io.Copy(file2, file1)
+	return nil
 }
 
 func DelFileOrDir(name string) error {
@@ -473,5 +597,6 @@ func DelFileOrDir(name string) error {
 			return err
 		}
 	}
+
 	return nil
 }

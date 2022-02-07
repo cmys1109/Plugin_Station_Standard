@@ -5,7 +5,7 @@
 插件作者成为协作者后，按照规范在[Plugin_Station](https://github.com/cmys1109/Plugin-Station)
 中提交插件以及插件详情json，客户端程序会按照作者提交的json内容自动安装插件  
 
-插件作者请注意：  
+插件开发者请注意：  
 1. 使用这种办法可能会增加你的工作量，也有可能减少你的工作量  
 2. 如果要成为协作者请联系我；邮箱：cmys1109@qq.com
 
@@ -15,15 +15,24 @@
 3. 运行exe后，输入插件名即可下载，这个请查看插件作者所提供的名称
 4. 如果发现bug，请联系我
 
+##  客户端使用教程
+命令：install   + 空格 + [PluginKey]———————安装插件  
+命令：uninstall + 空格 + [PluginKey]——————卸载插件  
+命令：update    + 空格 + [PluginKey] —————— 更新插件  
+命令：“update -a”—————————————更新所有插件  
+命令：“0” ————————————————— 退出程序
+
 插件下载API插件包标准  v220130
 ------
 ##  仓库文件存放结构
 Plugin文件只能为单个，如果是多个文件可以达成zip压缩包上传。仅限zip，因为客户端解压压缩包方案仅支持zip  
-确保Plugin文件名和details.json文件名相同  
 
-如：123.zip，123.json  
-客户端安装指令：123.zip
+确保Plugin文件名除去后缀后和details.json文件名去除后缀后相同  
 
+例子：插件文件名[123.zip]，详情包名[123.json]  
+PluginKey为[123.zip]
+
+Plugin
  ###  --Plugins
  ####  --PluginFile  
  ###  --Details
@@ -33,6 +42,11 @@ Plugin文件只能为单个，如果是多个文件可以达成zip压缩包上�
 
 ## Detail.json
 
+pluginname:"  "  
+version:"  "  
+developer:"  "  
+cmd:"  "  
+
 example:
  
 ![img3.png](./img/img3.png)
@@ -41,7 +55,7 @@ example:
 ------
 ##  cmd规范
 
-cmd是一个由key为string，value为string组成的集合  
+cmd为一个二维数组，元素值为string
 
 客户端在拿到detail.json的数据后会解析cmd  
 并且按顺序进行操作  
