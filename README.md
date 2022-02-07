@@ -49,7 +49,8 @@ Plugin
 pluginname:"  "  
 version:"  "  
 developer:"  "  
-cmd:"  "  
+install_cmd:"  "  
+update_cmd:"  "  
 
 example:
  
