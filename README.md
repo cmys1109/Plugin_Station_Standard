@@ -53,8 +53,8 @@ Plugin
 pluginname:"  "  
 version:"  "  
 developer:"  "  
-install_cmd:"  "  
-update_cmd:"  "  
+install_cmd:[]   
+update_cmd:[]    
 ```
 
 example:
