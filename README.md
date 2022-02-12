@@ -8,7 +8,7 @@
 
 关于更详细的一些内容，请查看main.go注释，做出了一些解释
 
-###操作指令：
+### 操作指令：
 ```
 命令：install   + 空格 + [PluginKey]——————安装插件  
 命令：uninstall + 空格 + [PluginKey]——————卸载插件  
@@ -61,7 +61,7 @@ Plugin
 "update_cmd"  :[  ]  []string
 ```
 
-##[example](https://github.com/cmys1109/Plugin-Station/blob/main/Details/123.json)  
+## [example](https://github.com/cmys1109/Plugin-Station/blob/main/Details/123.json)  
 
 
 ------
