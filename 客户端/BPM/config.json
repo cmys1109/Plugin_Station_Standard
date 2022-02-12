@@ -1,0 +1,23 @@
+{
+  "user_agent": "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36",
+  "get_plugin_url": {
+    "preferred": {
+      "url": "https://ghproxy.com/",
+      "link_mode": "splice"
+    },
+    "alternate": {
+      "url": "https://raw.githubusercontent.com/",
+      "link_mode": "parse"
+    }
+  },
+  "get_depend_url": {
+    "preferred": {
+      "url": "https://ghproxy.com/",
+      "link_mode": "splice"
+    },
+    "alternate": {
+      "url": "",
+      "link_mode": ""
+    }
+  }
+}
