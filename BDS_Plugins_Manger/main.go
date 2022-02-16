@@ -331,7 +331,7 @@ func main() {
 		case "update":
 			if PluginKey == "-a" {
 				PluginListFile, err := ioutil.ReadFile("./BPM/PluginList.json")
-				var PluginList map[string]map[string]string
+				var PluginList map[string]PluginLog
 				err = json.Unmarshal(PluginListFile, &PluginList)
 				if err != nil {
 					Logger(3, err.Error())
