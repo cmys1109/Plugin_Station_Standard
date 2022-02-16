@@ -29,7 +29,17 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
+	"unsafe"
+)
+
+// SYSLib 加载dll文件
+
+// SYSCmd 加载SysCmd函数
+var (
+	SYSLib = syscall.NewLazyDLL("SYSCMD.dll")
+	SYSCmd = SYSLib.NewProc("SysCmd")
 )
 
 type (
@@ -67,6 +77,7 @@ func (version Version) IsLastest(GetVer Version) bool {
 	return true
 }
 
+// StringToVersion 将string转为version
 func StringToVersion(PluginVer string) (Version, error) {
 	var PluginSlice = strings.Split(PluginVer, ".")
 	if len(PluginSlice) != 3 {
@@ -97,6 +108,11 @@ type app struct {
 	UserAgent    string               `json:"user_agent"`
 	GetPluginURL map[string]DecodeURL `json:"get_plugin_url"`
 	GetDependURL map[string]DecodeURL `json:"get_depend_url"`
+}
+
+type PluginLog struct {
+	File    []string `json:"file"`
+	Version string   `json:"version"`
 }
 
 func urlDecode(url DecodeURL, Addr string) string {
@@ -161,6 +177,15 @@ func main() {
 		if err != nil {
 			return
 		}
+	} else if err == nil {
+		err := os.RemoveAll("./temp")
+		if err != nil {
+			return
+		}
+		err = os.Mkdir("./temp", fs.ModePerm)
+		if err != nil {
+			return
+		}
 	}
 
 	_, err = os.Stat("./BPM")
@@ -175,7 +200,7 @@ func main() {
 	if os.IsNotExist(err) {
 		ConfigFile, err := os.OpenFile("./BPM/config.json", os.O_RDWR|os.O_CREATE, 0766)
 		if err != nil {
-			fmt.Println(err.Error())
+			Logger(3, err.Error())
 		}
 		_, err = ConfigFile.Write([]byte("{\n  \"user_agent\": \"Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36\",\n  \"get_plugin_url\": {\n    \"preferred\": {\n      \"url\": \"https://raw.fastgit.org/\",\n      \"link_mode\": \"parse\"\n    },\n    \"alternate\": {\n      \"url\": \"https://raw.githubusercontent.com/\",\n      \"link_mode\": \"parse\"\n    }\n  },\n  \"get_depend_url\": {\n    \"preferred\": {\n      \"url\": \"https://ghproxy.com/\",\n      \"link_mode\": \"splice\"\n    },\n    \"alternate\": {\n      \"url\": \"\",\n      \"link_mode\": \"\"\n    }\n  }\n}"))
 		if err != nil {
@@ -190,11 +215,11 @@ func main() {
 	var js, _ = ioutil.ReadFile("./BPM/config.json")
 	var jsonerr = json.Unmarshal(js, &App)
 	if jsonerr != nil {
-		fmt.Println(jsonerr)
+		Logger(3, jsonerr.Error())
 		var goin string
-		scanln, err := fmt.Scanln(&goin)
+		_, err := fmt.Scanln(&goin)
 		if err != nil {
-			fmt.Println(scanln)
+			Logger(3, err.Error())
 			return
 		}
 		return
@@ -204,9 +229,9 @@ func main() {
 	if os.IsNotExist(err) {
 		DependJsonFile, err := os.OpenFile("./BPM/Depends.json", os.O_RDWR|os.O_CREATE, 0766)
 		if err != nil {
-			fmt.Println(err.Error())
+			Logger(3, err.Error())
 		}
-		_, err = DependJsonFile.Write([]byte("[]"))
+		_, err = DependJsonFile.Write([]byte("{}"))
 		if err != nil {
 			return
 		}
@@ -216,11 +241,27 @@ func main() {
 		}
 	}
 
+	_, err = os.Stat("./BPM/Log")
+	if os.IsNotExist(err) {
+		LogFile, err := os.OpenFile("./BPM/Log", os.O_RDWR|os.O_CREATE, 0766)
+		if err != nil {
+			Logger(3, err.Error())
+		}
+		_, err = LogFile.Write([]byte("//BDS_Plugins_Manager Log\n"))
+		if err != nil {
+			return
+		}
+		err = LogFile.Close()
+		if err != nil {
+			return
+		}
+	}
+
 	_, err = os.Stat("./BPM/PluginList.json")
 	if os.IsNotExist(err) {
 		PluginListFile, err := os.OpenFile("./BPM/PluginList.json", os.O_RDWR|os.O_CREATE, 0766)
 		if err != nil {
-			fmt.Println(err.Error())
+			Logger(3, err.Error())
 		}
 		_, err = PluginListFile.Write([]byte("{}"))
 		if err != nil {
@@ -233,23 +274,22 @@ func main() {
 	}
 
 	if !TryLink(App.GetPluginURL["preferred"]) {
-		fmt.Println("PreferredURL outdated")
-		fmt.Println("Change download address...")
+		Logger(4, "PreferredURL outdated")
+		Logger(1, "Change download address...")
 		if !TryLink(App.GetPluginURL["alternate"]) {
-			fmt.Println("AlternateURL outdated")
-			fmt.Println("stop...")
+			Logger(4, "AlternateURL outdated")
 		} else {
 			PluginDownloadURL = App.GetPluginURL["alternate"]
 		}
 	} else {
 		PluginDownloadURL = App.GetPluginURL["preferred"]
+
 	}
 	if !TryLink(App.GetDependURL["preferred"]) {
-		fmt.Println("PreferredURL outdated")
-		fmt.Println("Change download address...")
+		Logger(4, "PreferredURL outdated")
+		Logger(1, "Change download address...")
 		if !TryLink(App.GetDependURL["alternate"]) {
-			fmt.Println("AlternateURL outdated")
-			fmt.Println("stop...")
+			Logger(4, "AlternateURL outdated")
 		} else {
 			DependDownloadURL = App.GetDependURL["alternate"]
 		}
@@ -257,18 +297,18 @@ func main() {
 		DependDownloadURL = App.GetDependURL["preferred"]
 	}
 
-	fmt.Println("Started!")
+	Logger(2, "Started!")
 	var command, PluginKey string
 	for true {
-		var PluginList map[string]map[string]string
+		var PluginList map[string]PluginLog
 		PluginListByte, err := ioutil.ReadFile("./BPM/PluginList.json")
 		if err != nil {
-			fmt.Println(err.Error())
+			Logger(3, err.Error())
 			return
 		}
 		err = json.Unmarshal(PluginListByte, &PluginList)
 		if err != nil {
-			fmt.Println(err.Error())
+			Logger(3, err.Error())
 			return
 		}
 
@@ -279,13 +319,13 @@ func main() {
 		case "install":
 			err = Install(PluginKey)
 			if err != nil {
-				fmt.Println(err.Error())
+				Logger(3, err.Error())
 				return
 			}
 		case "uninstall":
 			err = UninstallPlugin(PluginKey)
 			if err != nil {
-				fmt.Println(err.Error())
+				Logger(3, err.Error())
 				return
 			}
 		case "update":
@@ -294,18 +334,18 @@ func main() {
 				var PluginList map[string]map[string]string
 				err = json.Unmarshal(PluginListFile, &PluginList)
 				if err != nil {
-					fmt.Println(err.Error())
+					Logger(3, err.Error())
 					return
 				}
 
 				for i := range PluginList {
 					err := UpdatePlugin(i)
 					if err != nil {
-						fmt.Println(err.Error())
+						Logger(3, err.Error())
 						return
 					}
 				}
-				fmt.Println("All plug-ins are up to date.")
+				Logger(2, "All plug-ins are up to date.")
 			} else {
 				err := UpdatePlugin(PluginKey)
 				if err != nil {
@@ -314,12 +354,24 @@ func main() {
 				}
 			}
 		case "0":
-			fmt.Println("Stop...")
+			Logger(2, "Stop...")
 			return
 		case "depend": //临时接口，直接安装依赖
 			err := InstallDepend(PluginKey)
 			if err != nil {
-				fmt.Println(err.Error())
+				Logger(3, err.Error())
+				return
+			}
+		case "list":
+			err := OutPluginsList()
+			if err != nil {
+				Logger(3, err.Error())
+				return
+			}
+		case "undepend":
+			err := UnInstallDepend(PluginKey)
+			if err != nil {
+				Logger(3, err.Error())
 				return
 			}
 		}
@@ -331,6 +383,22 @@ func main() {
 // Install 调用GetDetails函数获取Plugin相应Details，解析并进行相应操作，
 // 先下载所需依赖，并且对应依赖和插件调用响应函数进行安装
 func Install(Plugin string) error {
+	var PluginList map[string]PluginLog
+	PluginListByte, err := ioutil.ReadFile("./BPM/PluginList.json")
+	if err != nil {
+		return err
+	}
+	err = json.Unmarshal(PluginListByte, &PluginList)
+	if err != nil {
+		return err
+	}
+	for k := range PluginList {
+		if k == Plugin {
+			Logger(1, Plugin+" installed.")
+			return nil
+		}
+	}
+
 	Details, err := GetDetails(Plugin)
 	if err != nil {
 		return err
@@ -342,15 +410,15 @@ func Install(Plugin string) error {
 			if err != nil {
 				return err
 			}
-			var DependsList []string
+			var DependsList map[string]PluginLog
 			err = json.Unmarshal(DependByte, &DependsList)
 			if err != nil {
 				return err
 			}
 
 			for i, Depend := range Details.Depends["depends"] {
-				for _, v := range DependsList {
-					if v == Depend {
+				for k := range DependsList {
+					if k == Depend {
 						Details.Depends["depends"] = append(Details.Depends["depends"][:i], Details.Depends["depends"][i+1:]...)
 					}
 				}
@@ -358,7 +426,7 @@ func Install(Plugin string) error {
 		}
 
 		if len(Details.Depends["plugins"]) != 0 {
-			var DependsList map[string]map[string]string
+			var DependsList map[string]PluginLog
 			DependByte, err := ioutil.ReadFile("./BPM/PluginList.json")
 			if err != nil {
 				return err
@@ -390,17 +458,17 @@ func Install(Plugin string) error {
 			}
 			fmt.Print("\n")
 			for Details.Depends["depends"] != nil || Details.Depends["plugins"] != nil {
-				fmt.Print("键入以继续安装(Yes/No)>>>")
+				fmt.Print(1, "键入以继续安装(Yes/No)>>>")
 				var c string
 				_, _ = fmt.Scanln(&c)
 				if c == "Yes" || c == "Y" || c == "y" || c == "YES" || c == "yes" {
-					fmt.Println("start install...")
+					Logger(2, "start install...")
 					break
 				} else if c == "NO" || c == "No" || c == "N" || c == "n" {
-					fmt.Println("stop install...")
+					Logger(2, "stop install...")
 					return nil
 				} else {
-					fmt.Println("ERR command")
+					Logger(1, "ERR command")
 				}
 			}
 
@@ -428,13 +496,13 @@ func Install(Plugin string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(Plugin, " Successfully installed!")
+	Logger(2, Plugin+" Successfully installed!")
 	return nil
 }
 
 // TryLink 尝试连接给定的下载URL，如果可用存为DownloadURL
 func TryLink(url DecodeURL) bool {
-	fmt.Println("Try to linking...")
+	Logger(1, "Try to linking...")
 	cl := &http.Client{Timeout: 3 * time.Second}
 	req, _ := http.NewRequest("GET", urlDecode(url, "https://github.com/cmys1109/Plugin-Station/blob/main/README.md"), nil)
 	req.Header.Set("User-Agent", App.UserAgent)
@@ -450,10 +518,10 @@ func TryLink(url DecodeURL) bool {
 	}(res.Body)
 
 	if res.StatusCode == 200 {
-		fmt.Println("StatusCode = 200,Really to download...")
+		Logger(1, "StatusCode = 200,URL:"+url.URL)
 		return true
 	} else {
-		fmt.Println("StatusCode Error :" + strconv.Itoa(res.StatusCode))
+		Logger(3, "StatusCode Error :"+strconv.Itoa(res.StatusCode))
 		return false
 	}
 }
@@ -481,7 +549,7 @@ func GetPlugin(PluginKey string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Println("Downloading...")
+		Logger(1, "Downloading...")
 		StarTime := time.Now().UnixNano()
 		written, err := io.Copy(f, resp.Body)
 		if err != nil {
@@ -494,9 +562,7 @@ func GetPlugin(PluginKey string) error {
 		}
 		EndTime := time.Now().UnixNano()
 		seconds := float64((EndTime - StarTime) / 1e9)
-		fmt.Print("The download took ")
-		fmt.Print(seconds)
-		fmt.Println(" seconds.")
+		Logger(1, "The download took "+strconv.FormatFloat(seconds, 'E', 1, 64)+" seconds.")
 	} else {
 		fmt.Println("url link err" + strconv.Itoa(resp.StatusCode))
 		return errors.New("StatusCode:" + strconv.Itoa(resp.StatusCode))
@@ -532,7 +598,7 @@ func GetDetails(PluginKey string) (Details, error) {
 
 // InstallPlugin 读取InstallCmd，并且遍历并进行操作，最后将Plugin相应信息写入PluginList.json
 func InstallPlugin(details Details, PluginKey string) error {
-	var PluginList map[string]map[string]string
+	var PluginList map[string]PluginLog
 	PluginListByte, err := ioutil.ReadFile("./BPM/PluginList.json")
 	if err != nil {
 		return err
@@ -541,42 +607,31 @@ func InstallPlugin(details Details, PluginKey string) error {
 	if err != nil {
 		return err
 	}
-	if PluginList[PluginKey] != nil {
-		fmt.Println(PluginKey, " installed.")
-		return nil
+	for k := range PluginList {
+		if k == PluginKey {
+			Logger(1, PluginKey+" installed.")
+			return nil
+		}
 	}
+
 	_, err = StringToVersion(details.Version)
 	if err != nil {
 		return err
 	}
-	fmt.Println(details.Pluginname, " start to install...")
-	fmt.Println("Plugin version:", details.Version)
-	fmt.Println("Plugin developer:", details.Developer)
+	Logger(2, details.Pluginname+" start to install...\n"+"Plugin version:"+details.Version)
 	PluginListStruct := make(map[string]string)
 	PluginListStruct["version"] = details.Version
-	for Com, Command := range details.InstallCmd {
-		fmt.Println("Run command:", Com)
-		switch Command[0] {
-		case "unzip":
-			err := Unzip(Command[1], Command[2])
-			if err != nil {
-				return err
-			}
-		case "copy":
-			err := CopyFile(Command[1], Command[2])
-			if err != nil {
-				return err
-			}
-			PluginListStruct["file_"+Command[2]] = Command[2]
-		case "del":
-			err := DelFileOrDir(Command[1])
-			if err != nil {
-				return err
-			}
-		}
+	FileLogSlice, err := CmdCore(details.InstallCmd, PluginList[PluginKey].File)
+	if err != nil {
+		return err
 	}
+	var PluginLogSCR PluginLog
+	for _, v := range FileLogSlice {
+		PluginLogSCR.File = append(PluginLogSCR.File, v)
+	}
+	PluginLogSCR.Version = details.Version
+	PluginList[PluginKey] = PluginLogSCR
 
-	PluginList[PluginKey] = PluginListStruct
 	PluginListByte, err = json.Marshal(PluginList)
 	if err != nil {
 		return err
@@ -592,12 +647,12 @@ func InstallPlugin(details Details, PluginKey string) error {
 //如果是调用GetPlugin下载最新版，并且读取UpdateCmd进行相应操作
 func UpdatePlugin(PluginKey string) error {
 	PluginListFile, err := ioutil.ReadFile("./BPM/PluginList.json")
-	var PluginList map[string]map[string]string
+	var PluginList map[string]PluginLog
 	err = json.Unmarshal(PluginListFile, &PluginList)
 	if err != nil {
 		return err
 	}
-	NowVersionStr := PluginList[PluginKey]["version"]
+	NowVersionStr := PluginList[PluginKey].Version
 	NowVersion, err := StringToVersion(NowVersionStr)
 	if err != nil {
 		return err
@@ -613,38 +668,23 @@ func UpdatePlugin(PluginKey string) error {
 	}
 
 	if NowVersion.IsLastest(NewVersion) {
-		fmt.Println(PluginKey, " is lastest")
+		Logger(1, PluginKey+" is lastest")
 		return nil
 	}
 	err = GetPlugin(PluginKey)
 	if err != nil {
 		return err
 	}
-	var PluginListStruct map[string]string
-	PluginListStruct = PluginList[PluginKey]
-	for Com, Command := range details.UpdateCmd {
-		fmt.Println("Run command:", Com)
-		switch Command[0] {
-		case "unzip":
-			err := Unzip(Command[1], Command[2])
-			if err != nil {
-				return err
-			}
-		case "copy":
-			err := CopyFile(Command[1], Command[2])
-			if err != nil {
-				return err
-			}
-			PluginListStruct["file_"+Command[2]] = Command[2]
-		case "del":
-			err := DelFileOrDir(Command[1])
-			if err != nil {
-				return err
-			}
-			delete(PluginListStruct, "file_ "+Command[1])
-		}
+	FileLogSlice, err := CmdCore(details.InstallCmd, PluginList[PluginKey].File)
+	if err != nil {
+		return err
 	}
-	PluginList[PluginKey] = PluginListStruct
+	var PluginLogSCR PluginLog
+	for _, v := range FileLogSlice {
+		PluginLogSCR.File = append(PluginLogSCR.File, v)
+	}
+	PluginLogSCR.Version = details.Version
+	PluginList[PluginKey] = PluginLogSCR
 	PluginListByte, err := json.Marshal(PluginList)
 	if err != nil {
 		return err
@@ -653,7 +693,7 @@ func UpdatePlugin(PluginKey string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(PluginKey, " updated")
+	Logger(2, PluginKey+" updated.Now version "+NewVersion.ToString())
 
 	return nil
 }
@@ -665,25 +705,22 @@ func UninstallPlugin(PluginKey string) error {
 		return err
 	}
 
-	var PluginList map[string]map[string]string
+	var PluginList map[string]PluginLog
 	err = json.Unmarshal(PluginListFile, &PluginList)
 	if err != nil {
 		return err
 	}
 
-	FileList := PluginList[PluginKey]
+	FileList := PluginList[PluginKey].File
 	if FileList == nil {
-		fmt.Println("'" + PluginKey + "'" + "not installed.")
+		Logger(1, "'"+PluginKey+"'"+"not installed.")
 		return nil
 	}
 	for i := range FileList {
-		if i != "version" {
-			err = DelFileOrDir(FileList[i])
-			if err != nil {
-				return err
-			}
+		err = DelFileOrDir(FileList[i])
+		if err != nil {
+			return err
 		}
-
 	}
 
 	delete(PluginList, PluginKey)
@@ -695,7 +732,49 @@ func UninstallPlugin(PluginKey string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(PluginKey, " uninstalled.")
+	Logger(2, PluginKey+" uninstalled.")
+
+	return nil
+}
+
+// OutPluginsList 输出Plugin列表
+func OutPluginsList() error {
+	PluginListFile, err := ioutil.ReadFile("./BPM/PluginList.json")
+	if err != nil {
+		return err
+	}
+	var PluginList map[string]PluginLog
+	err = json.Unmarshal(PluginListFile, &PluginList)
+	if err != nil {
+		return err
+	}
+	var i = 1
+	fmt.Println("Plugins:")
+	for k, v := range PluginList {
+		fmt.Print(i)
+		fmt.Println(".", k, "  ", v.Version)
+		i++
+	}
+	if i == 1 {
+		fmt.Println("<nil>")
+	}
+
+	DependListFile, err := ioutil.ReadFile("./BPM/Depends.json")
+	if err != nil {
+		return err
+	}
+	var DependList map[string]PluginLog
+	err = json.Unmarshal(DependListFile, &DependList)
+	i = 1
+	fmt.Println("Depends:")
+	for k, v := range DependList {
+		fmt.Print(i)
+		fmt.Println(".", k, "  ", v.Version)
+		i++
+	}
+	if i == 1 {
+		fmt.Println("<nil>")
+	}
 
 	return nil
 }
@@ -707,15 +786,15 @@ func InstallDepend(Depend string) error {
 	if err != nil {
 		return err
 	}
-	var DependsList []string
+	var DependsList map[string]PluginLog
 	err = json.Unmarshal(DependByte, &DependsList)
 	if err != nil {
 		return err
 	}
 	//var DependList
-	for _, v := range DependsList {
-		if v == Depend {
-			fmt.Println(Depend + " installed")
+	for k := range DependsList {
+		if k == Depend {
+			Logger(1, Depend+" installed")
 			return nil
 		}
 	}
@@ -740,14 +819,14 @@ func InstallDepend(Depend string) error {
 	}
 	var exist = false
 	for key := range Depends {
-		_, DependExist := Depends[key]
-		if DependExist == true {
+		if key == Depend {
 			exist = true
 			break
 		}
 	}
 	if exist == false {
-		return errors.New("the depend non-existent")
+		Logger(4, "the depend <"+Depend+"> non-existent")
+		return nil
 	}
 
 	//
@@ -777,6 +856,10 @@ func InstallDepend(Depend string) error {
 		return err
 	}
 
+	if len(xxm.Assets) == 0 {
+		Logger(4, "Not found <"+Depend+">'s browser_download_url\nContact the developer to resolve\ndetails:<"+"https://api.github.com/repos/"+Depends[Depend].URL+"/releases/latest>")
+		return nil
+	}
 	BrowserDownloadURL := xxm.Assets[0].BrowserDownloadURL //最新发行版下载地址
 
 	//下载
@@ -800,7 +883,7 @@ func InstallDepend(Depend string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Println("Downloading...")
+		Logger(1, "Downloading...")
 		StarTime := time.Now().UnixNano()
 		written, err := io.Copy(f, re.Body)
 		if err != nil {
@@ -813,54 +896,25 @@ func InstallDepend(Depend string) error {
 		}
 		EndTime := time.Now().UnixNano()
 		seconds := float64((EndTime - StarTime) / 1e9)
-		fmt.Print("The download took ")
-		fmt.Print(seconds)
-		fmt.Println(" seconds.")
+		Logger(1, "The download took "+strconv.FormatFloat(seconds, 'E', 1, 64)+" seconds.")
 	} else {
 		fmt.Println("url link err" + strconv.Itoa(re.StatusCode))
 		return errors.New("StatusCode:" + strconv.Itoa(re.StatusCode))
 	}
 
 	//安装
-	for _, v := range Depends[Depend].InstallCmd {
-		Command := v
-		switch Command[0] {
-		case "unzip":
-			err := Unzip(Command[1], Command[2])
-			if err != nil {
-				return err
-			}
-			break
-		case "copy":
-			err := CopyFile(Command[1], Command[2])
-			if err != nil {
-				return err
-			}
-		case "copydir":
-			err := CopyDir(Command[1], Command[2])
-			if err != nil {
-				return err
-			}
-		case "del":
-			err := DelFileOrDir(Command[1])
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	DependByte, err = ioutil.ReadFile("./BPM/Depends.json")
+	FileLogSlice, err := CmdCore(Depends[Depend].InstallCmd, nil)
 	if err != nil {
 		return err
 	}
-	var DependList []string
-	err = json.Unmarshal(DependByte, &DependList)
-	if err != nil {
-		return err
-	}
-	DependList = append(DependList, Depend)
 
-	DependByte, err = json.Marshal(DependList)
+	var DependLogSCR PluginLog
+	DependLogSCR.File = FileLogSlice
+	BrowserDownloadURLSlice := strings.Split(BrowserDownloadURL, "/")
+	DependLogSCR.Version = BrowserDownloadURLSlice[len(BrowserDownloadURLSlice)-2]
+	DependsList[Depend] = DependLogSCR
+
+	DependByte, err = json.Marshal(DependsList)
 	if err != nil {
 		return err
 	}
@@ -870,8 +924,171 @@ func InstallDepend(Depend string) error {
 		return err
 	}
 
-	fmt.Println(Depend, " installed")
+	Logger(2, Depend+" installed")
 	return nil
+}
+
+// UnInstallDepend 卸载依赖函数
+//
+// 完全复制UnInstallPlugin函数，仅仅修改了函数名和调用文件
+// 如无必要，勿增实体,复制粘贴，方便易用
+func UnInstallDepend(PluginKey string) error {
+	PluginListFile, err := ioutil.ReadFile("./BPM/Depends.json")
+	if err != nil {
+		return err
+	}
+
+	var PluginList map[string]PluginLog
+	err = json.Unmarshal(PluginListFile, &PluginList)
+	if err != nil {
+		return err
+	}
+
+	FileList := PluginList[PluginKey].File
+	if FileList == nil {
+		Logger(1, "'"+PluginKey+"'"+"not installed.")
+		return nil
+	}
+	for i := range FileList {
+		err = DelFileOrDir(FileList[i])
+		if err != nil {
+			return err
+		}
+	}
+
+	delete(PluginList, PluginKey)
+	PluginListByte, err := json.Marshal(PluginList)
+	if err != nil {
+		return err
+	}
+	err = ioutil.WriteFile("./BPM/Depends.json", PluginListByte, fs.ModePerm)
+	if err != nil {
+		return err
+	}
+	Logger(2, PluginKey+" uninstalled.")
+
+	return nil
+}
+
+// CmdCore 统一的运行cmd的函数
+func CmdCore(CmdSlice [][]string, FileLog []string) ([]string, error) {
+	for _, v := range CmdSlice {
+		Command := v
+		switch Command[0] {
+		case "unzip":
+			err := Unzip(Command[1], Command[2])
+			if err != nil {
+				return FileLog, err
+			}
+			FileLog = append(FileLog, Command[2])
+		case "copy":
+			err := CopyFile(Command[1], Command[2])
+			if err != nil {
+				return FileLog, err
+			}
+			FileLog = append(FileLog, Command[2])
+		case "copydir":
+			err := CopyDir(Command[1], Command[2])
+			if err != nil {
+				return FileLog, err
+			}
+			FileLog = append(FileLog, Command[2])
+		case "del":
+			has := false
+			for i := range FileLog {
+				if FileLog[i] != Command[1] {
+					continue
+				}
+				has = true
+				err := DelFileOrDir(Command[1])
+				if err != nil {
+					return FileLog, err
+				}
+				FileLog = append(FileLog[:i], FileLog[i+1:]...)
+				break
+			}
+			if has == false {
+				Logger(4, Command[1]+"不在FileLog中，无权限删除")
+			}
+		case "syscmd":
+			Logger(4, "请注意!正在调用SYSCMD  调用内容: "+Command[1])
+			CharPtr, err := syscall.BytePtrFromString(Command[1])
+			if err != nil {
+				return FileLog, err
+			}
+			_, _, err = SYSCmd.Call(uintptr(unsafe.Pointer(CharPtr)))
+
+		}
+	}
+
+	return FileLog, nil
+}
+
+// Logger 统一记录以及输出函数
+/*
+
+Type
+     1 info输出
+     2 info输出并且写入日志
+     3 error输出并写入日志
+     4 warning输出并写入日志
+*/
+func Logger(Type int, text string) {
+	switch Type {
+	case 1:
+		fmt.Println("[" + LogTime() + "]" + "[INFO] " + text)
+	case 2:
+		log := "[" + LogTime() + "]" + "[INFO] " + text
+		fmt.Println(log)
+		LogFile, err := os.OpenFile("./BPM/Log", os.O_APPEND|os.O_CREATE, fs.ModePerm)
+		if err != nil {
+			fmt.Println("DEBUG——Logger error,type 2")
+		}
+		_, err = LogFile.Write([]byte(log + "\n"))
+		if err != nil {
+			return
+		}
+		err = LogFile.Close()
+		if err != nil {
+			return
+		}
+	case 3:
+		log := "[" + LogTime() + "]" + "[ERR] " + text
+		fmt.Printf("\033[1;31;40m%s\033[0m\n", log)
+		LogFile, err := os.OpenFile("./BPM/Log", os.O_APPEND|os.O_CREATE, fs.ModePerm)
+		if err != nil {
+			fmt.Println("DEBUG——Logger error,type 3")
+		}
+		_, err = LogFile.Write([]byte(log + "\n"))
+		if err != nil {
+			return
+		}
+		err = LogFile.Close()
+		if err != nil {
+			return
+		}
+	case 4:
+		log := "[" + LogTime() + "]" + "[WARN] " + text
+		fmt.Printf("\033[1;31;40m%s\033[0m\n", log)
+		LogFile, err := os.OpenFile("./BPM/Log", os.O_APPEND|os.O_CREATE, fs.ModePerm)
+		if err != nil {
+			fmt.Println("DEBUG——Logger error,type 4")
+		}
+		_, err = LogFile.Write([]byte(log + "\n"))
+		if err != nil {
+			return
+		}
+		err = LogFile.Close()
+		if err != nil {
+			return
+		}
+	}
+}
+
+func LogTime() string {
+	Year, Mouth, Day := time.Now().Date()
+	Hour, Min, Sec := time.Now().Clock()
+	return strconv.Itoa(Year) + " " + Mouth.String() + " " + strconv.Itoa(Day) + " " + strconv.Itoa(Hour) + ":" + strconv.Itoa(Min) + ":" + strconv.Itoa(Sec)
 }
 
 // Unzip 解压zip至指定目录
