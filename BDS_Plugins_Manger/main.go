@@ -18,6 +18,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -32,111 +33,17 @@ import (
 )
 
 func main() {
-	DependDownloadURL = DecodeURL{URL: "https://ghproxy.com/", LinkMode: "splice"}
+	DependDownloadURL = DecodeURL{URL: "https://raw.iqiq.io/", LinkMode: "parse"}
 	PluginDownloadURL = DependDownloadURL
 
-	_, err := os.Stat("./temp")
-	if os.IsNotExist(err) {
-		err := os.Mkdir("./temp", fs.ModePerm)
-		if err != nil {
-			return
-		}
-	} else if err == nil {
-		err := os.RemoveAll("./temp")
-		if err != nil {
-			return
-		}
-		err = os.Mkdir("./temp", fs.ModePerm)
-		if err != nil {
-			return
-		}
-	}
-
-	_, err = os.Stat("./BPM")
-	if os.IsNotExist(err) {
-		err := os.Mkdir("./BPM", fs.ModePerm)
-		if err != nil {
-			return
-		}
-	}
-
-	_, err = os.Stat("./BPM/config.json")
-	if os.IsNotExist(err) {
-		ConfigFile, err := os.OpenFile("./BPM/config.json", os.O_RDWR|os.O_CREATE, 0766)
-		if err != nil {
-			Logger(3, err.Error())
-		}
-		_, err = ConfigFile.Write([]byte("{\n  \"try_link\": false,\n  \"debug\": true,\n  \"user_agent\": \"Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36\",\n  \"get_plugin_url\": {\n    \"preferred\": {\n      \"url\": \"https://ghproxy.com/\",\n      \"link_mode\": \"splice\"\n    },\n    \"alternate\": {\n      \"url\": \"https://raw.githubusercontent.com/\",\n      \"link_mode\": \"parse\"\n    }\n  },\n  \"get_depend_url\": {\n    \"preferred\": {\n      \"url\": \"https://ghproxy.com/\",\n      \"link_mode\": \"splice\"\n    },\n    \"alternate\": {\n      \"url\": \"\",\n      \"link_mode\": \"\"\n    }\n  }\n}"))
-		if err != nil {
-			return
-		}
-		err = ConfigFile.Close()
-		if err != nil {
-			return
-		}
-	}
-
-	var js, _ = ioutil.ReadFile("./BPM/config.json")
-	var jsonerr = json.Unmarshal(js, &App)
-	if jsonerr != nil {
-		Logger(3, jsonerr.Error())
-		var goin string
-		_, err := fmt.Scanln(&goin)
-		if err != nil {
-			Logger(3, err.Error())
-			return
-		}
+	// 启动前工作
+	err := Start()
+	if err != nil {
+		panic(err)
 		return
 	}
 
-	_, err = os.Stat("./BPM/Depends.json")
-	if os.IsNotExist(err) {
-		DependJsonFile, err := os.OpenFile("./BPM/Depends.json", os.O_RDWR|os.O_CREATE, 0766)
-		if err != nil {
-			Logger(3, err.Error())
-		}
-		_, err = DependJsonFile.Write([]byte("{}"))
-		if err != nil {
-			return
-		}
-		err = DependJsonFile.Close()
-		if err != nil {
-			return
-		}
-	}
-
-	_, err = os.Stat("./BPM/Log")
-	if os.IsNotExist(err) {
-		LogFile, err := os.OpenFile("./BPM/Log", os.O_RDWR|os.O_CREATE, 0766)
-		if err != nil {
-			Logger(3, err.Error())
-		}
-		_, err = LogFile.Write([]byte("//BDS_Plugins_Manager Log\n"))
-		if err != nil {
-			return
-		}
-		err = LogFile.Close()
-		if err != nil {
-			return
-		}
-	}
-
-	_, err = os.Stat("./BPM/PluginList.json")
-	if os.IsNotExist(err) {
-		PluginListFile, err := os.OpenFile("./BPM/PluginList.json", os.O_RDWR|os.O_CREATE, 0766)
-		if err != nil {
-			Logger(3, err.Error())
-		}
-		_, err = PluginListFile.Write([]byte("{}"))
-		if err != nil {
-			return
-		}
-		err = PluginListFile.Close()
-		if err != nil {
-			return
-		}
-	}
-
+	// TryLink
 	if App.TryLink == true {
 		var wgTL sync.WaitGroup
 		wgTL.Add(2)
@@ -180,8 +87,8 @@ func main() {
 	var command, PluginKey string
 
 	for true {
-		var PluginList map[string]PluginLog
-		PluginListByte, err := ioutil.ReadFile("./BPM/PluginList.json")
+		var PluginList ManagerJson
+		PluginListByte, err := ioutil.ReadFile("./BPM/Manager.json")
 		if err != nil {
 			Logger(3, err.Error())
 			return
@@ -210,15 +117,7 @@ func main() {
 			}
 		case "update":
 			if PluginKey == "-a" {
-				PluginListFile, err := ioutil.ReadFile("./BPM/PluginList.json")
-				var PluginList map[string]PluginLog
-				err = json.Unmarshal(PluginListFile, &PluginList)
-				if err != nil {
-					Logger(3, err.Error())
-					return
-				}
-
-				for i := range PluginList {
+				for i := range PluginList.Plugin {
 					err := UpdatePlugin(i)
 					if err != nil {
 						Logger(3, err.Error())
@@ -263,139 +162,235 @@ func main() {
 				Logger(3, err.Error())
 				return
 			}
-		case "-c":
+		case "cp":
 			err := CreatPackage(PluginKey)
 			if err != nil {
 				Logger(3, err.Error())
 				return
 			}
-		case "-g":
+		case "gp":
 			err := InstallPackage(PluginKey)
 			if err != nil {
 				Logger(3, err.Error())
 				return
 			}
+		case "dp":
+			err := UninstallPackage(PluginKey)
+			if err != nil {
+				Logger(3, err.Error())
+				return
+			}
+		case "it":
+			details, err := GetDetails(PluginKey)
+			if err != nil {
+				return
+			}
+			var List InstallList
+			GetInstallList(details, &List)
+			fmt.Println(List)
+		default:
+			fmt.Println("错误的指令")
 		}
+		command = ""
+		PluginKey = ""
+	}
+	return
+}
+
+func GetInstallList(i interface{}, install *InstallList) {
+	details, ok := i.(Details)
+	if !ok {
+		details, ok := i.(PackJson)
+		if !ok {
+			panic(errors.New("ERROR TYPE"))
+			return
+		}
+		// details是PackJson
+		for _, v := range details.Depends["plugins"] {
+			// 判断是否已经存在，防止写入多个相同的依赖
+			if (func() bool {
+				for _, value := range install.Plugins {
+					if value == v {
+						return true //已经存在
+					}
+				}
+				return false
+			})() {
+				continue //跳过剩下的for循环语句
+			}
+
+			install.Plugins = append(install.Plugins, v)
+			getDetails, err := GetDetails(v)
+			if err != nil {
+				panic(err)
+				return
+			}
+			GetInstallList(getDetails, install)
+		}
+		for _, v := range details.Depends["depends"] {
+			if (func() bool {
+				for _, value := range install.Depends {
+					if value == v {
+						return true //已经存在
+					}
+				}
+				return false
+			})() {
+				continue //跳过剩下的for循环语句
+			}
+			install.Depends = append(install.Depends, v)
+			// Depend 是不需要任何依赖的
+		}
+		for _, v := range details.Depends["Package"] {
+			//同上
+			if (func() bool {
+				for _, value := range install.Package {
+					if value == v {
+						return true //已经存在
+					}
+				}
+				return false
+			})() {
+				continue //跳过剩下的for循环语句
+			}
+			install.Package = append(install.Package, v)
+			packageJson, err := GetPackage(v)
+			if err != nil {
+				panic(err)
+				return
+			}
+			GetInstallList(packageJson, install)
+		}
+		return
+	}
+
+	// details是Details
+	for _, v := range details.Depends["plugins"] {
+		if (func() bool {
+			for _, value := range install.Plugins {
+				if value == v {
+					return true //已经存在
+				}
+			}
+			return false
+		})() {
+			continue //跳过剩下的for循环语句
+		}
+		install.Plugins = append(install.Plugins, v)
+		getDetails, err := GetDetails(v)
+		if err != nil {
+			panic(err)
+			return
+		}
+		GetInstallList(getDetails, install)
+	}
+	for _, v := range details.Depends["depends"] {
+		if (func() bool {
+			for _, value := range install.Depends {
+				if value == v {
+					return true //已经存在
+				}
+			}
+			return false
+		})() {
+			continue //跳过剩下的for循环语句
+		}
+		install.Depends = append(install.Depends, v)
+		// Depend 是不需要任何依赖的
+	}
+	for _, v := range details.Depends["package"] {
+		if (func() bool {
+			for _, value := range install.Package {
+				if value == v {
+					return true //已经存在
+				}
+			}
+			return false
+		})() {
+			continue //跳过剩下的for循环语句
+		}
+		install.Package = append(install.Package, v)
+		packageJson, err := GetPackage(v)
+		if err != nil {
+			panic(err)
+			return
+		}
+		GetInstallList(packageJson, install)
 	}
 	return
 }
 
 // Install 调用GetDetails函数获取Plugin相应Details，解析并进行相应操作，
+//
 // 先下载所需依赖，并且对应依赖和插件调用响应函数进行安装
 func Install(Plugin string) error {
-	var PluginList map[string]PluginLog
-	PluginListByte, err := ioutil.ReadFile("./BPM/PluginList.json")
+	var Manager ManagerJson
+	PluginListByte, err := ioutil.ReadFile("./BPM/Manager.json")
 	if err != nil {
 		return err
 	}
-	err = json.Unmarshal(PluginListByte, &PluginList)
+	err = json.Unmarshal(PluginListByte, &Manager)
 	if err != nil {
 		return err
 	}
-	for k := range PluginList {
+	for k := range Manager.Plugin {
 		if k == Plugin {
 			Logger(1, Plugin+" installed.")
 			return nil
 		}
 	}
 
-	Details, err := GetDetails(Plugin)
+	details, err := GetDetails(Plugin)
 	if err != nil {
 		return err
 	}
-
-	if len(Details.Depends["depends"]) != 0 || len(Details.Depends["plugins"]) != 0 {
-		if len(Details.Depends["depends"]) != 0 {
-			DependByte, err := ioutil.ReadFile("./BPM/Depends.json")
-			if err != nil {
-				return err
-			}
-			var DependsList map[string]PluginLog
-			err = json.Unmarshal(DependByte, &DependsList)
-			if err != nil {
-				return err
-			}
-
-			for i, Depend := range Details.Depends["depends"] {
-				for k := range DependsList {
-					if k == Depend {
-						Details.Depends["depends"] = append(Details.Depends["depends"][:i], Details.Depends["depends"][i+1:]...)
-					}
-				}
-			}
-		}
-
-		if len(Details.Depends["plugins"]) != 0 {
-			var DependsList map[string]PluginLog
-			DependByte, err := ioutil.ReadFile("./BPM/PluginList.json")
-			if err != nil {
-				return err
-			}
-			err = json.Unmarshal(DependByte, &DependsList)
-			if err != nil {
-				return err
-			}
-
-			for i, Depend := range Details.Depends["plugins"] {
-				for k := range DependsList {
-					if k == Depend {
-						Details.Depends["plugins"] = append(Details.Depends["plugins"][:i], Details.Depends["plugins"][i+1:]...)
-					}
-				}
-			}
-		}
-
-		if len(Details.Depends["depends"]) != 0 || len(Details.Depends["plugins"]) != 0 {
-			fmt.Println("需要安装以下依赖：")
-			i := 1
-			for _, v := range Details.Depends["depends"] {
-				fmt.Print(i, ".", v, "  ")
-				i++
-			}
-			for _, v := range Details.Depends["plugins"] {
-				fmt.Print(i, ".", v, "  ")
-				i++
-			}
-			fmt.Print("\n")
-			for Details.Depends["depends"] != nil || Details.Depends["plugins"] != nil {
-				fmt.Print(1, "键入以继续安装(Yes/No)>>>")
-				var c string
-				_, _ = fmt.Scanln(&c)
-				if c == "Yes" || c == "Y" || c == "y" || c == "YES" || c == "yes" {
-					Logger(2, "start install...")
-					break
-				} else if c == "NO" || c == "No" || c == "N" || c == "n" {
-					Logger(2, "stop install...")
-					return nil
-				} else {
-					Logger(1, "ERR command")
-				}
-			}
-
-			for _, Depend := range Details.Depends["depends"] {
-				err := InstallDepend(Depend)
-				if err != nil {
-					return err
-				}
-			}
-			for _, Depend := range Details.Depends["plugins"] {
-				err := Install(Depend)
-				if err != nil {
-					return err
-				}
-			}
+	var List InstallList
+	List.Plugins = append(List.Plugins, Plugin)
+	GetInstallList(details, &List)
+	List.RemoveExistingItems()
+	List.Print()
+	for true {
+		fmt.Print("确定下载[y/n]")
+		var s string
+		_, err = fmt.Scanln(&s)
+		if s == "y" {
+			break
+		} else if s == "n" {
+			return nil
+		} else {
+			fmt.Println("请输入 y或n")
 		}
 	}
 
-	err = GetPlugin(Plugin)
-	if err != nil {
-		return err
+	for _, v := range List.Depends {
+		err = InstallDepend(v)
+		if err != nil {
+			return err
+		}
 	}
 
-	err = InstallPlugin(Details, Plugin)
-	if err != nil {
-		return err
+	for _, v := range List.Plugins {
+		details, err := GetDetails(v)
+		if err != nil {
+			return err
+		}
+		err = GetPlugin(v)
+		if err != nil {
+			return err
+		}
+		err = InstallPlugin(details, v)
+		if err != nil {
+			return err
+		}
 	}
+
+	for _, v := range List.Package {
+		err := InstallPackage(v)
+		if err != nil {
+			return err
+		}
+	}
+
 	Logger(2, Plugin+" Successfully installed!")
 	return nil
 }

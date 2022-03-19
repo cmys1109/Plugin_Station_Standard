@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/zip"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -236,4 +237,132 @@ func GetPathMap(pathname string) map[string][]string {
 	}
 
 	return FileList
+}
+
+func Start() error {
+	_, err := os.Stat("./temp")
+	if os.IsNotExist(err) {
+		err := os.Mkdir("./temp", fs.ModePerm)
+		if err != nil {
+			return err
+		}
+	} else if err == nil {
+		err := os.RemoveAll("./temp")
+		if err != nil {
+			return err
+		}
+		err = os.Mkdir("./temp", fs.ModePerm)
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err = os.Stat("./BPM")
+	if os.IsNotExist(err) {
+		err := os.Mkdir("./BPM", fs.ModePerm)
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err = os.Stat("./BPM/config.json")
+	if os.IsNotExist(err) {
+		ConfigFile, err := os.OpenFile("./BPM/config.json", os.O_RDWR|os.O_CREATE, 0766)
+		if err != nil {
+			Logger(3, err.Error())
+		}
+		_, err = ConfigFile.Write([]byte("{\n  \"try_link\": false,\n  \"debug\": true,\n  \"user_agent\": \"Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36\",\n  \"get_plugin_url\": {\n    \"preferred\": {\n      \"url\": \"https://ghproxy.com/\",\n      \"link_mode\": \"splice\"\n    },\n    \"alternate\": {\n      \"url\": \"https://raw.githubusercontent.com/\",\n      \"link_mode\": \"parse\"\n    }\n  },\n  \"get_depend_url\": {\n    \"preferred\": {\n      \"url\": \"https://ghproxy.com/\",\n      \"link_mode\": \"splice\"\n    },\n    \"alternate\": {\n      \"url\": \"\",\n      \"link_mode\": \"\"\n    }\n  }\n}"))
+		if err != nil {
+			return err
+		}
+		err = ConfigFile.Close()
+		if err != nil {
+			return err
+		}
+	}
+
+	var js, _ = ioutil.ReadFile("./BPM/config.json")
+	var jsonerr = json.Unmarshal(js, &App)
+	if jsonerr != nil {
+		Logger(3, jsonerr.Error())
+		var goin string
+		_, err := fmt.Scanln(&goin)
+		if err != nil {
+			Logger(3, err.Error())
+			return err
+		}
+		return err
+	}
+
+	//_, err = os.Stat("./BPM/Depends.json")
+	//if os.IsNotExist(err) {
+	//	DependJsonFile, err := os.OpenFile("./BPM/Depends.json", os.O_RDWR|os.O_CREATE, 0766)
+	//	if err != nil {
+	//		Logger(3, err.Error())
+	//	}
+	//	_, err = DependJsonFile.Write([]byte("{}"))
+	//	if err != nil {
+	//		return err
+	//	}
+	//	err = DependJsonFile.Close()
+	//	if err != nil {
+	//		return err
+	//	}
+	//}
+
+	_, err = os.Stat("./BPM/Log")
+	if os.IsNotExist(err) {
+		LogFile, err := os.OpenFile("./BPM/Log", os.O_RDWR|os.O_CREATE, 0766)
+		if err != nil {
+			Logger(3, err.Error())
+		}
+		_, err = LogFile.Write([]byte("//BDS_Plugins_Manager Log\n"))
+		if err != nil {
+			return err
+		}
+		err = LogFile.Close()
+		if err != nil {
+			return err
+		}
+	}
+
+	//_, err = os.Stat("./BPM/PluginList.json")
+	//if os.IsNotExist(err) {
+	//	PluginListFile, err := os.OpenFile("./BPM/PluginList.json", os.O_RDWR|os.O_CREATE, 0766)
+	//	if err != nil {
+	//		Logger(3, err.Error())
+	//	}
+	//	_, err = PluginListFile.Write([]byte("{}"))
+	//	if err != nil {
+	//		return err
+	//	}
+	//	err = PluginListFile.Close()
+	//	if err != nil {
+	//		return err
+	//	}
+	//}
+
+	_, err = os.Stat("./BPM/Manager.json")
+	if os.IsNotExist(err) {
+		PluginListFile, err := os.OpenFile("./BPM/Manager.json", os.O_RDWR|os.O_CREATE, 0766)
+		if err != nil {
+			Logger(3, err.Error())
+		}
+		var Manager ManagerJson
+		Manager.Start()
+		ManagerByte, err := json.Marshal(Manager)
+		if err != nil {
+			return err
+		}
+		_, err = PluginListFile.Write(ManagerByte)
+		if err != nil {
+			return err
+		}
+		err = PluginListFile.Close()
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

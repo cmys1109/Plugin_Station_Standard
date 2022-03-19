@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"strconv"
 	"strings"
 	"syscall"
@@ -105,7 +107,7 @@ type (
 )
 
 // ToString 将version转化为string
-func (version Version) ToString() string {
+func (version *Version) ToString() string {
 	var versionstr = "V "
 	versionstr = versionstr + strconv.Itoa(version.MajorVersionNumber) + "."
 	versionstr = versionstr + strconv.Itoa(version.MinorVersionNumber) + "."
@@ -151,10 +153,109 @@ func StringToVersion(PluginVer string) (Version, error) {
 }
 
 type PackJson struct {
-	PackageName string              `json:"Package_name"`
+	PackageName string              `json:"package_name"`
 	Version     string              `json:"version"`
 	Developer   string              `json:"developer"`
 	Depends     map[string][]string `json:"depends"`
 	Level       int                 `json:"level"`
 	PackageMap  map[string][]string `json:"package_map"`
+}
+
+type InstallList struct {
+	Depends []string `json:"depends"`
+	Plugins []string `json:"plugins"`
+	Package []string `json:"package"`
+}
+
+func (list *InstallList) RemoveExistingItems() {
+	var Manager ManagerJson
+
+	ManagerByte, err := ioutil.ReadFile("./BPM/Manager.json")
+	if err != nil {
+		panic(err)
+		return
+	}
+	err = json.Unmarshal(ManagerByte, &Manager)
+	if err != nil {
+		panic(err)
+		return
+	}
+	for i, v := range list.Depends {
+		if (func() bool {
+			for key := range Manager.Depend {
+				if v == key {
+					return true
+				}
+			}
+			return false
+		})() {
+			list.Depends = append(list.Depends[:i], list.Depends[i+1:]...)
+		}
+	}
+	for i, v := range list.Plugins {
+		if (func() bool {
+			for key := range Manager.Plugin {
+				if v == key {
+					return true
+				}
+			}
+			return false
+		})() {
+			list.Plugins = append(list.Plugins[:i], list.Plugins[i+1:]...)
+		}
+	}
+	for i, v := range list.Package {
+		if (func() bool {
+			for key := range Manager.Package {
+				if v == key {
+					return true
+				}
+			}
+			return false
+		})() {
+			list.Package = append(list.Package[:i], list.Package[i+1:]...)
+		}
+	}
+}
+
+func (list *InstallList) Print() {
+	fmt.Println("需要安装的Depends：")
+	if len(list.Depends) == 0 {
+		fmt.Println("<nil>")
+	}
+	for i, v := range list.Depends {
+		fmt.Println(i+1, v)
+	}
+	fmt.Println("需要安装的Plugins：")
+	if len(list.Plugins) == 0 {
+		fmt.Println("<nil>")
+	}
+	for i, v := range list.Plugins {
+		fmt.Println(i+1, v)
+	}
+	fmt.Println("需要安装的Package：")
+	if len(list.Package) == 0 {
+		fmt.Println("<nil>")
+	}
+	for i, v := range list.Package {
+		fmt.Println(i+1, v)
+	}
+}
+
+type ManagerJson struct {
+	Depend  map[string]PluginLog `json:"depend"`
+	Plugin  map[string]PluginLog `json:"plugin"`
+	Package map[string]PackJson  `json:"package"`
+}
+
+func (Manager *ManagerJson) Start() {
+	if Manager.Plugin == nil {
+		Manager.Plugin = make(map[string]PluginLog)
+	}
+	if Manager.Depend == nil {
+		Manager.Depend = make(map[string]PluginLog)
+	}
+	if Manager.Package == nil {
+		Manager.Package = make(map[string]PackJson)
+	}
 }

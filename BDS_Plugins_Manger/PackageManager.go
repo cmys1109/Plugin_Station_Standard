@@ -38,7 +38,7 @@ func GetPlugin(PluginKey string) error {
 			return err
 		}
 		Logger(1, "Downloading...")
-		StarTime := time.Now().UnixNano()
+		StartTime := time.Now()
 		written, err := io.Copy(f, resp.Body)
 		if err != nil {
 			fmt.Println(written)
@@ -48,9 +48,9 @@ func GetPlugin(PluginKey string) error {
 		if err != nil {
 			return err
 		}
-		EndTime := time.Now().UnixNano()
-		seconds := float64((EndTime - StarTime) / 1e9)
-		Logger(1, "The download took "+strconv.FormatFloat(seconds, 'E', 1, 64)+" seconds.")
+		EndTime := time.Now()
+		subTime := EndTime.Sub(StartTime)
+		Logger(1, "The download took "+subTime.String()+" seconds.")
 	} else {
 		fmt.Println("url link err" + strconv.Itoa(resp.StatusCode))
 		return errors.New("StatusCode:" + strconv.Itoa(resp.StatusCode))
@@ -61,16 +61,16 @@ func GetPlugin(PluginKey string) error {
 
 // InstallPlugin 读取InstallCmd，并且遍历并进行操作，最后将Plugin相应信息写入PluginList.json
 func InstallPlugin(details Details, PluginKey string) error {
-	var PluginList map[string]PluginLog
-	PluginListByte, err := ioutil.ReadFile("./BPM/PluginList.json")
+	var Manager ManagerJson
+	ManagerByte, err := ioutil.ReadFile("./BPM/Manager.json")
 	if err != nil {
 		return err
 	}
-	err = json.Unmarshal(PluginListByte, &PluginList)
+	err = json.Unmarshal(ManagerByte, &Manager)
 	if err != nil {
 		return err
 	}
-	for k := range PluginList {
+	for k := range Manager.Plugin {
 		if k == PluginKey {
 			Logger(1, PluginKey+" installed.")
 			return nil
@@ -84,7 +84,7 @@ func InstallPlugin(details Details, PluginKey string) error {
 	Logger(2, details.Pluginname+" start to install...\n"+"Plugin version:"+details.Version)
 	PluginListStruct := make(map[string]string)
 	PluginListStruct["version"] = details.Version
-	FileLogSlice, err := CmdCore(details.InstallCmd, PluginList[PluginKey].File)
+	FileLogSlice, err := CmdCore(details.InstallCmd, Manager.Plugin[PluginKey].File)
 	if err != nil {
 		return err
 	}
@@ -93,13 +93,13 @@ func InstallPlugin(details Details, PluginKey string) error {
 		PluginLogSCR.File = append(PluginLogSCR.File, v)
 	}
 	PluginLogSCR.Version = details.Version
-	PluginList[PluginKey] = PluginLogSCR
+	Manager.Plugin[PluginKey] = PluginLogSCR
 
-	PluginListByte, err = json.Marshal(PluginList)
+	ManagerByte, err = json.Marshal(Manager)
 	if err != nil {
 		return err
 	}
-	err = ioutil.WriteFile("./BPM/PluginList.json", PluginListByte, fs.ModePerm)
+	err = ioutil.WriteFile("./BPM/Manager.json", ManagerByte, fs.ModePerm)
 	if err != nil {
 		return err
 	}
@@ -109,13 +109,13 @@ func InstallPlugin(details Details, PluginKey string) error {
 // UpdatePlugin 读取仓库内对应Detail.json判断是否为最新版
 //如果是调用GetPlugin下载最新版，并且读取UpdateCmd进行相应操作
 func UpdatePlugin(PluginKey string) error {
-	PluginListFile, err := ioutil.ReadFile("./BPM/PluginList.json")
-	var PluginList map[string]PluginLog
-	err = json.Unmarshal(PluginListFile, &PluginList)
+	ManagerByte, err := ioutil.ReadFile("./BPM/Manager.json")
+	var Manager ManagerJson
+	err = json.Unmarshal(ManagerByte, &Manager)
 	if err != nil {
 		return err
 	}
-	NowVersionStr := PluginList[PluginKey].Version
+	NowVersionStr := Manager.Plugin[PluginKey].Version
 	NowVersion, err := StringToVersion(NowVersionStr)
 	if err != nil {
 		return err
@@ -138,7 +138,7 @@ func UpdatePlugin(PluginKey string) error {
 	if err != nil {
 		return err
 	}
-	FileLogSlice, err := CmdCore(details.InstallCmd, PluginList[PluginKey].File)
+	FileLogSlice, err := CmdCore(details.InstallCmd, Manager.Plugin[PluginKey].File)
 	if err != nil {
 		return err
 	}
@@ -147,12 +147,12 @@ func UpdatePlugin(PluginKey string) error {
 		PluginLogSCR.File = append(PluginLogSCR.File, v)
 	}
 	PluginLogSCR.Version = details.Version
-	PluginList[PluginKey] = PluginLogSCR
-	PluginListByte, err := json.Marshal(PluginList)
+	Manager.Plugin[PluginKey] = PluginLogSCR
+	ManagerByte, err = json.Marshal(Manager)
 	if err != nil {
 		return err
 	}
-	err = ioutil.WriteFile("./BPM/PluginList.json", PluginListByte, fs.ModePerm)
+	err = ioutil.WriteFile("./BPM/Manager.json", ManagerByte, fs.ModePerm)
 	if err != nil {
 		return err
 	}
@@ -163,18 +163,18 @@ func UpdatePlugin(PluginKey string) error {
 
 // UninstallPlugin 读取PluginList.json内相应内容，并且删除所记录的文件以及json内相应内容
 func UninstallPlugin(PluginKey string) error {
-	PluginListFile, err := ioutil.ReadFile("./BPM/PluginList.json")
+	ManagerByte, err := ioutil.ReadFile("./BPM/Manager.json")
 	if err != nil {
 		return err
 	}
 
-	var PluginList map[string]PluginLog
-	err = json.Unmarshal(PluginListFile, &PluginList)
+	var Manager ManagerJson
+	err = json.Unmarshal(ManagerByte, &Manager)
 	if err != nil {
 		return err
 	}
 
-	FileList := PluginList[PluginKey].File
+	FileList := Manager.Plugin[PluginKey].File
 	if FileList == nil {
 		Logger(1, "'"+PluginKey+"'"+"not installed.")
 		return nil
@@ -182,16 +182,16 @@ func UninstallPlugin(PluginKey string) error {
 	for i := range FileList {
 		err = DelFileOrDir(FileList[i])
 		if err != nil {
-			return err
+			Logger(4, err.Error())
 		}
 	}
 
-	delete(PluginList, PluginKey)
-	PluginListByte, err := json.Marshal(PluginList)
+	delete(Manager.Plugin, PluginKey)
+	ManagerByte, err = json.Marshal(Manager)
 	if err != nil {
 		return err
 	}
-	err = ioutil.WriteFile("./BPM/PluginList.json", PluginListByte, fs.ModePerm)
+	err = ioutil.WriteFile("./BPM/Manager.json", ManagerByte, fs.ModePerm)
 	if err != nil {
 		return err
 	}
@@ -203,22 +203,23 @@ func UninstallPlugin(PluginKey string) error {
 // InstallDepend 涵盖依赖的下载安装，基本方法与Plugin相同
 //不同之处在于，获取依赖通过读取仓库内Depends.json进行对应URL下载
 func InstallDepend(Depend string) error {
-	DependByte, err := ioutil.ReadFile("./BPM/Depends.json")
+	ManagerByte, err := ioutil.ReadFile("./BPM/Manager.json")
 	if err != nil {
 		return err
 	}
-	var DependsList map[string]PluginLog
-	err = json.Unmarshal(DependByte, &DependsList)
+	var Manager ManagerJson
+	err = json.Unmarshal(ManagerByte, &Manager)
 	if err != nil {
 		return err
 	}
-	//var DependList
-	for k := range DependsList {
+	// 判断是否安装
+	for k := range Manager.Depend {
 		if k == Depend {
 			Logger(1, Depend+" installed")
 			return nil
 		}
 	}
+	//获取详情
 	cl := &http.Client{Timeout: 120 * time.Second}
 	request, _ := http.NewRequest("GET", urlDecode(DependDownloadURL, "https://raw.githubusercontent.com/cmys1109/Plugin-Station/main/Depends.json"), nil)
 	request.Header.Set("User-Agent", App.UserAgent)
@@ -305,7 +306,7 @@ func InstallDepend(Depend string) error {
 			return err
 		}
 		Logger(1, "Downloading...")
-		StarTime := time.Now().UnixNano()
+		StartTime := time.Now()
 		written, err := io.Copy(f, re.Body)
 		if err != nil {
 			fmt.Println(written)
@@ -315,9 +316,9 @@ func InstallDepend(Depend string) error {
 		if err != nil {
 			return err
 		}
-		EndTime := time.Now().UnixNano()
-		seconds := float64((EndTime - StarTime) / 1e9)
-		Logger(1, "The download took "+strconv.FormatFloat(seconds, 'E', 1, 64)+" seconds.")
+		EndTime := time.Now()
+		subTime := EndTime.Sub(StartTime)
+		Logger(1, "The download took "+subTime.String()+" seconds.")
 	} else {
 		fmt.Println("url link err" + strconv.Itoa(re.StatusCode))
 		return errors.New("StatusCode:" + strconv.Itoa(re.StatusCode))
@@ -333,14 +334,14 @@ func InstallDepend(Depend string) error {
 	DependLogSCR.File = FileLogSlice
 	BrowserDownloadURLSlice := strings.Split(BrowserDownloadURL, "/")
 	DependLogSCR.Version = BrowserDownloadURLSlice[len(BrowserDownloadURLSlice)-2]
-	DependsList[Depend] = DependLogSCR
+	Manager.Depend[Depend] = DependLogSCR
 
-	DependByte, err = json.Marshal(DependsList)
+	ManagerByte, err = json.Marshal(Manager)
 	if err != nil {
 		return err
 	}
 
-	err = ioutil.WriteFile("./BPM/Depends.json", DependByte, fs.ModePerm)
+	err = ioutil.WriteFile("./BPM/Manger.json", ManagerByte, fs.ModePerm)
 	if err != nil {
 		return err
 	}
@@ -352,21 +353,22 @@ func InstallDepend(Depend string) error {
 // UnInstallDepend 卸载依赖函数
 //
 // 完全复制UnInstallPlugin函数，仅仅修改了函数名和调用文件
+//
 // 如无必要，勿增实体,复制粘贴，方便易用
 func UnInstallDepend(PluginKey string) error {
-	PluginListFile, err := ioutil.ReadFile("./BPM/Depends.json")
+	PluginListFile, err := ioutil.ReadFile("./BPM/Manager.json")
 	if err != nil {
 		return err
 	}
 
-	var PluginList map[string]PluginLog
-	err = json.Unmarshal(PluginListFile, &PluginList)
+	var Manger ManagerJson
+	err = json.Unmarshal(PluginListFile, &Manger)
 	if err != nil {
 		return err
 	}
 
 	has := false
-	for k := range PluginList {
+	for k := range Manger.Depend {
 		if k == PluginKey {
 			has = true
 			break
@@ -376,7 +378,7 @@ func UnInstallDepend(PluginKey string) error {
 		Logger(1, "'"+PluginKey+"'"+"not installed.")
 		return nil
 	}
-	FileList := PluginList[PluginKey].File
+	FileList := Manger.Depend[PluginKey].File
 	for i := range FileList {
 		err = DelFileOrDir(FileList[i])
 		if err != nil {
@@ -384,12 +386,12 @@ func UnInstallDepend(PluginKey string) error {
 		}
 	}
 
-	delete(PluginList, PluginKey)
-	PluginListByte, err := json.Marshal(PluginList)
+	delete(Manger.Depend, PluginKey)
+	PluginListByte, err := json.Marshal(Manger)
 	if err != nil {
 		return err
 	}
-	err = ioutil.WriteFile("./BPM/Depends.json", PluginListByte, fs.ModePerm)
+	err = ioutil.WriteFile("./BPM/Manager.json", PluginListByte, fs.ModePerm)
 	if err != nil {
 		return err
 	}
@@ -426,18 +428,18 @@ func GetDetails(PluginKey string) (Details, error) {
 
 // OutPluginsList 输出Plugin列表
 func OutPluginsList() error {
-	PluginListFile, err := ioutil.ReadFile("./BPM/PluginList.json")
+	PluginListFile, err := ioutil.ReadFile("./BPM/Manager.json")
 	if err != nil {
 		return err
 	}
-	var PluginList map[string]PluginLog
-	err = json.Unmarshal(PluginListFile, &PluginList)
+	var Manager ManagerJson
+	err = json.Unmarshal(PluginListFile, &Manager)
 	if err != nil {
 		return err
 	}
 	var i = 1
-	fmt.Println("Plugins:")
-	for k, v := range PluginList {
+	fmt.Println("Depends:")
+	for k, v := range Manager.Depend {
 		fmt.Print(i)
 		fmt.Println(".", k, "  ", v.Version)
 		i++
@@ -445,16 +447,19 @@ func OutPluginsList() error {
 	if i == 1 {
 		fmt.Println("<nil>")
 	}
-
-	DependListFile, err := ioutil.ReadFile("./BPM/Depends.json")
-	if err != nil {
-		return err
-	}
-	var DependList map[string]PluginLog
-	err = json.Unmarshal(DependListFile, &DependList)
 	i = 1
-	fmt.Println("Depends:")
-	for k, v := range DependList {
+	fmt.Println("Plugins:")
+	for k, v := range Manager.Plugin {
+		fmt.Print(i)
+		fmt.Println(".", k, "  ", v.Version)
+		i++
+	}
+	if i == 1 {
+		fmt.Println("<nil>")
+	}
+	i = 1
+	fmt.Println("Packages:")
+	for k, v := range Manager.Package {
 		fmt.Print(i)
 		fmt.Println(".", k, "  ", v.Version)
 		i++
@@ -568,7 +573,7 @@ func GetPackage(PackageURL string) (PackJson, error) {
 			return PackJson{}, err
 		}
 		Logger(1, "Downloading...")
-		StarTime := time.Now().UnixNano()
+		StartTime := time.Now()
 		written, err := io.Copy(f, resp.Body)
 		if err != nil {
 			fmt.Println(written)
@@ -578,9 +583,9 @@ func GetPackage(PackageURL string) (PackJson, error) {
 		if err != nil {
 			return PackJson{}, err
 		}
-		EndTime := time.Now().UnixNano()
-		seconds := float64((EndTime - StarTime) / 1e9)
-		Logger(1, "The download took "+strconv.FormatFloat(seconds, 'E', 1, 64)+" seconds.")
+		EndTime := time.Now()
+		subTime := EndTime.Sub(StartTime)
+		Logger(1, "The download took "+subTime.String()+" seconds.")
 	} else {
 		fmt.Println("url link err" + strconv.Itoa(resp.StatusCode))
 		return PackJson{}, errors.New("StatusCode:" + strconv.Itoa(resp.StatusCode))
@@ -602,6 +607,36 @@ func GetPackage(PackageURL string) (PackJson, error) {
 	}
 
 	return PackageJson, nil
+}
+
+func UninstallPackage(Package string) error {
+	ManagerByte, err := ioutil.ReadFile("./BPM/Manager.json")
+	if err != nil {
+		return err
+	}
+	var Manager ManagerJson
+	err = json.Unmarshal(ManagerByte, &Manager)
+	if err != nil {
+		return err
+	}
+
+	if Manager.Package[Package].PackageName == "" {
+		Logger(4, Package+" not installed.")
+		return nil
+	}
+
+	for _, k := range Manager.Package[Package].PackageMap["File"] {
+		err := os.Remove(k)
+		if err != nil {
+			Logger(4, "ERROR delete "+k)
+		}
+	}
+	Logger(1, "为防止出现意外的问题，Package安装时创建的目录不会被自动删除")
+	Logger(1, "列出所创建目录列表，可以自行根据需要手动删除：")
+	for i, k := range Manager.Package[Package].PackageMap["Dir"] {
+		fmt.Println(i+1, k)
+	}
+	return nil
 }
 
 func CmdToURL(PackageURL string) string {

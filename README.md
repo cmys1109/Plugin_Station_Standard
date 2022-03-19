@@ -22,8 +22,9 @@
 命令：depend    + 空格 + [Depend]——————————————安装依赖
 命令：undepend  + 空格 + [Depend]——————————————卸载依赖
 命令："list"———————————————————列出已安装的插件和依赖列表
-命令：-c        + 空格 + [Package]———在当前目录建立一个包
-命令：-g        + 空格 + [Package_Addr]——————安装插件包
+命令：cp        + 空格 + [Package]———在当前目录建立一个包
+命令：gp        + 空格 + [Package_Addr]——————安装插件包
+命令：dp        + 空格 + [Package]———————————————卸载包
 ```
 
 ---
@@ -62,7 +63,8 @@ Plugin
 "developer"   :"  "  string        
 "depends"     :{                  |struct {//结构定义
                 "depends":[],     |        depends []string
-                "plugins":[]      |        plugins []string 
+                "plugins":[],     |        plugins []string 
+                "package":[]      |        package []string 
                }                  |      }  
 "level"       : 2    int
 "install_cmd" :[  ]  []string
